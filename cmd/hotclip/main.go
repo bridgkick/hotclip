@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/ebridg/hotclip/internal/store"
-	"github.com/ebridg/hotclip/internal/ui"
+	"github.com/bridgkick/hotclip/internal/store"
+	"github.com/bridgkick/hotclip/internal/ui"
 )
 
 func main() {

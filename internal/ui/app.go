@@ -12,9 +12,9 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/ebridg/hotclip/internal/clipboard"
-	"github.com/ebridg/hotclip/internal/model"
-	"github.com/ebridg/hotclip/internal/store"
+	"github.com/bridgkick/hotclip/internal/clipboard"
+	"github.com/bridgkick/hotclip/internal/model"
+	"github.com/bridgkick/hotclip/internal/store"
 	"github.com/pkg/browser"
 	"golang.org/x/net/html"
 )

@@ -17,7 +17,7 @@ A fast terminal UI for saving, sorting, and sharing links. Built with [Bubble Te
 ## Install
 
 ```
-go install github.com/ebridg/hotclip/cmd/hotclip@latest
+go install github.com/bridgkick/hotclip/cmd/hotclip@latest
 ```
 
 Or build from source:

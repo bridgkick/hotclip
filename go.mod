@@ -1,4 +1,4 @@
-module github.com/ebridg/hotclip
+module github.com/bridgkick/hotclip
 
 go 1.25.0
 

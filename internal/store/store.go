@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ebridg/hotclip/internal/model"
+	"github.com/bridgkick/hotclip/internal/model"
 )
 
 type fileData struct {
