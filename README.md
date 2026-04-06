@@ -25,7 +25,7 @@ Or build from source:
 ```
 git clone https://github.com/bridgkick/hotclip.git
 cd hotclip
-go build -o hotclip ./cmd/hotclip
+go build -o hotclip.exe ./cmd/hotclip
 ```
 
 ## Keybindings
