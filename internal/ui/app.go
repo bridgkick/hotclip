@@ -195,6 +195,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if msg, ok := msg.(tea.MouseClickMsg); ok {
+		if msg.Button == tea.MouseLeft {
+			// Items start at Y=2 (title + status bar).
+			// Each item is 1 line tall (no description, no spacing).
+			const headerLines = 2
+			clickedRow := msg.Y - headerLines
+			pageOffset := m.list.Paginator.Page * m.list.Paginator.PerPage
+			globalIdx := pageOffset + clickedRow
+			visible := m.list.VisibleItems()
+			if clickedRow >= 0 && globalIdx < len(visible) {
+				m.list.Select(globalIdx)
+				return m.copySelected()
+			}
+		}
+		return m, nil
+	}
 	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		// Handle delete confirmation.
 		if m.confirmingDel {
@@ -408,6 +424,7 @@ func (m *Model) selectByID(id string) {
 func (m Model) View() tea.View {
 	var v tea.View
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 
 	if m.view == viewForm {
 		v.SetContent(m.formView())
