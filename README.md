@@ -32,6 +32,7 @@ go build -o hotclip.exe ./cmd/hotclip
 
 | Key | Action |
 |-------|----------------|
+| `click` | Copy link |
 | `enter` | Copy link |
 | `o` | Open in browser |
 | `a` | Add link |
@@ -46,3 +47,4 @@ go build -o hotclip.exe ./cmd/hotclip
 - [Bubble Tea](https://charm.land/bubbletea) — TUI framework
 - [Bubbles](https://charm.land/bubbles) — TUI components
 - [Lip Gloss](https://charm.land/lipgloss) — Styling
+- [BubbleZone](https://github.com/lrstanley/bubblezone) — Mouse zone detection
