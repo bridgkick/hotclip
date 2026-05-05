@@ -15,6 +15,7 @@ import (
 	"github.com/bridgkick/hotclip/internal/clipboard"
 	"github.com/bridgkick/hotclip/internal/model"
 	"github.com/bridgkick/hotclip/internal/store"
+	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/pkg/browser"
 	"golang.org/x/net/html"
 )
@@ -122,10 +123,28 @@ func (i linkItem) Title() string {
 func (i linkItem) Description() string  { return "" }
 func (i linkItem) FilterValue() string  { return i.Link.FilterValue() }
 
+// zoneDelegate wraps the default list delegate to mark each item as a
+// BubbleZone so mouse clicks can be mapped back to items by ID.
+type zoneDelegate struct {
+	list.DefaultDelegate
+	zone *zone.Manager
+}
+
+func (d zoneDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	var buf strings.Builder
+	d.DefaultDelegate.Render(&buf, m, index, item)
+	if li, ok := item.(linkItem); ok {
+		fmt.Fprint(w, d.zone.Mark(li.ID, buf.String()))
+	} else {
+		fmt.Fprint(w, buf.String())
+	}
+}
+
 // Model is the root bubbletea model.
 type Model struct {
 	store      *store.Store
 	list       list.Model
+	zone       *zone.Manager
 	view       viewState
 	titleInput textinput.Model
 	urlInput   textinput.Model
@@ -140,7 +159,11 @@ type Model struct {
 // New creates the root model wired to the given store.
 func New(s *store.Store) Model {
 	items := linksToItems(s.All())
-	delegate := list.NewDefaultDelegate()
+	zm := zone.New()
+	delegate := zoneDelegate{
+		DefaultDelegate: list.NewDefaultDelegate(),
+		zone:            zm,
+	}
 	delegate.ShowDescription = false
 	delegate.SetSpacing(0)
 
@@ -164,6 +187,7 @@ func New(s *store.Store) Model {
 	return Model{
 		store:      s,
 		list:       l,
+		zone:       zm,
 		titleInput: ti,
 		urlInput:   ui,
 	}
@@ -197,16 +221,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.MouseClickMsg); ok {
 		if msg.Button == tea.MouseLeft {
-			// Items start at Y=2 (title + status bar).
-			// Each item is 1 line tall (no description, no spacing).
-			const headerLines = 2
-			clickedRow := msg.Y - headerLines
-			pageOffset := m.list.Paginator.Page * m.list.Paginator.PerPage
-			globalIdx := pageOffset + clickedRow
-			visible := m.list.VisibleItems()
-			if clickedRow >= 0 && globalIdx < len(visible) {
-				m.list.Select(globalIdx)
-				return m.copySelected()
+			for i, item := range m.list.Items() {
+				if li, ok := item.(linkItem); ok {
+					if m.zone.Get(li.ID).InBounds(msg) {
+						m.list.Select(i)
+						return m.copySelected()
+					}
+				}
 			}
 		}
 		return m, nil
@@ -441,7 +462,7 @@ func (m Model) View() tea.View {
 		return v
 	}
 
-	v.SetContent(m.list.View())
+	v.SetContent(m.zone.Scan(m.list.View()))
 	return v
 }
 
