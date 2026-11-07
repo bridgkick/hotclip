@@ -434,8 +434,8 @@ func (m Model) copySelected() (tea.Model, tea.Cmd) {
 	url := item.URL
 	copyCmd := func() tea.Msg {
 		if err := clipboard.CopyRichLink(title, url); err != nil {
-			// Fallback to OSC52 plain text is not possible from inside a Cmd,
-			// but on Windows the syscall approach should work reliably.
+			// On Windows, CopyRichLink uses Win32 clipboard APIs.
+			// On other platforms, it falls back to OSC 52 escape sequences written to stdout.
 			_ = err
 		}
 		return nil

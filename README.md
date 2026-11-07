@@ -6,7 +6,7 @@ A fast terminal UI for saving, sorting, and sharing links. Built with [Bubble Te
 
 ## Features
 
-- **Rich clipboard copy** — copies links as clickable hyperlinks (HTML), not just plain text
+- **Rich clipboard copy & OSC 52 fallback** — copies links as clickable hyperlinks (HTML) on Windows, with automatic OSC 52 terminal clipboard escape sequences on Linux and macOS
 - **Auto title fetch** — grabs the page `<title>` when you add a URL
 - **Activity tracking** — tracks use count and last-used time per link
 - **Sort modes** — cycle between recent, most shared, and alphabetical
