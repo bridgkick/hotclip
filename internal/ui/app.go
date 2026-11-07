@@ -15,6 +15,7 @@ import (
 	"github.com/bridgkick/hotclip/internal/clipboard"
 	"github.com/bridgkick/hotclip/internal/model"
 	"github.com/bridgkick/hotclip/internal/store"
+	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/pkg/browser"
 	"golang.org/x/net/html"
@@ -98,45 +99,164 @@ func isJunkTitle(title string) bool {
 	return title == ""
 }
 
-// linkItem wraps model.Link to implement list.DefaultItem.
+// linkItem wraps model.Link to implement list.Item.
 type linkItem struct {
 	model.Link
 }
 
-func (i linkItem) Title() string {
-	var badge string
-	if i.UseCount > 0 {
-		badge = fmt.Sprintf("  %s", badgeStyle.Render(fmt.Sprintf("%dx, %s", i.UseCount, model.RelativeTime(i.LastUsed))))
-	} else {
-		badge = "  " + dimStyle.Render("●")
-	}
-	url := i.URL
-	if len([]rune(url)) > 32 {
-		url = string([]rune(url)[:32]) + "…"
-	}
-	title := i.Link.Title
-	if len([]rune(title)) > 53 {
-		title = string([]rune(title)[:53]) + "…"
-	}
-	return title + "  " + dimStyle.Render(url) + badge
-}
-func (i linkItem) Description() string  { return "" }
-func (i linkItem) FilterValue() string  { return i.Link.FilterValue() }
+func (i linkItem) Title() string       { return i.Link.Title }
+func (i linkItem) Description() string { return "" }
+func (i linkItem) FilterValue() string { return i.Link.FilterValue() }
 
-// zoneDelegate wraps the default list delegate to mark each item as a
-// BubbleZone so mouse clicks can be mapped back to items by ID.
-type zoneDelegate struct {
-	list.DefaultDelegate
-	zone *zone.Manager
+// linkDelegate marks each item as a BubbleZone while rendering cleanly
+// without corrupting ANSI escape sequences during filtering.
+type linkDelegate struct {
+	styles list.DefaultItemStyles
+	zone   *zone.Manager
 }
 
-func (d zoneDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	var buf strings.Builder
-	d.DefaultDelegate.Render(&buf, m, index, item)
-	if li, ok := item.(linkItem); ok {
-		fmt.Fprint(w, d.zone.Mark(li.ID, buf.String()))
+func newLinkDelegate(zm *zone.Manager) linkDelegate {
+	return linkDelegate{
+		styles: list.NewDefaultItemStyles(true),
+		zone:   zm,
+	}
+}
+
+func (d linkDelegate) Height() int                             { return 1 }
+func (d linkDelegate) Spacing() int                            { return 0 }
+func (d linkDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+
+func (d linkDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	li, ok := item.(linkItem)
+	if !ok {
+		return
+	}
+	l := li.Link
+
+	if m.Width() <= 0 {
+		return
+	}
+
+	isSelected := index == m.Index()
+	emptyFilter := m.FilterState() == list.Filtering && m.FilterValue() == ""
+	isFiltered := m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied
+
+	var matchedRunes []int
+	if isFiltered {
+		matchedRunes = m.MatchesForItem(index)
+	}
+
+	// Calculate matches for Title and URL
+	titleRunes := []rune(l.Title)
+	urlRunes := []rune(l.URL)
+
+	title := l.Title
+	if len(titleRunes) > 53 {
+		title = string(titleRunes[:53]) + "…"
+	}
+
+	url := l.URL
+	if len(urlRunes) > 32 {
+		url = string(urlRunes[:32]) + "…"
+	}
+
+	maxTitleMatch := len(titleRunes)
+	if maxTitleMatch > 53 {
+		maxTitleMatch = 53
+	}
+
+	maxURLMatch := len(urlRunes)
+	if maxURLMatch > 32 {
+		maxURLMatch = 32
+	}
+
+	var titleMatches []int
+	var urlMatches []int
+
+	urlOffset := len(titleRunes) + 1 // title + space + url
+	for _, idx := range matchedRunes {
+		if idx >= 0 && idx < maxTitleMatch {
+			titleMatches = append(titleMatches, idx)
+		} else if rel := idx - urlOffset; rel >= 0 && rel < maxURLMatch {
+			urlMatches = append(urlMatches, rel)
+		}
+	}
+
+	// Style Title
+	var renderedTitle string
+	if emptyFilter {
+		renderedTitle = d.styles.DimmedTitle.Render(title)
+	} else if isSelected && m.FilterState() != list.Filtering {
+		if isFiltered && len(titleMatches) > 0 {
+			unmatched := d.styles.SelectedTitle.Inline(true)
+			matched := unmatched.Inherit(d.styles.FilterMatch)
+			renderedTitle = lipgloss.StyleRunes(title, titleMatches, matched, unmatched)
+		} else {
+			renderedTitle = title
+		}
+		renderedTitle = d.styles.SelectedTitle.Render(renderedTitle)
 	} else {
-		fmt.Fprint(w, buf.String())
+		if isFiltered && len(titleMatches) > 0 {
+			unmatched := d.styles.NormalTitle.Inline(true)
+			matched := unmatched.Inherit(d.styles.FilterMatch)
+			renderedTitle = lipgloss.StyleRunes(title, titleMatches, matched, unmatched)
+		} else {
+			renderedTitle = title
+		}
+		renderedTitle = d.styles.NormalTitle.Render(renderedTitle)
+	}
+
+	// Style URL
+	var renderedURL string
+	if isFiltered && len(urlMatches) > 0 {
+		unmatched := dimStyle.Inline(true)
+		matched := unmatched.Inherit(d.styles.FilterMatch)
+		renderedURL = lipgloss.StyleRunes(url, urlMatches, matched, unmatched)
+	} else {
+		renderedURL = dimStyle.Render(url)
+	}
+
+	// Style Badge
+	var renderedBadge string
+	if l.UseCount > 0 {
+		renderedBadge = badgeStyle.Render(fmt.Sprintf("%dx, %s", l.UseCount, model.RelativeTime(l.LastUsed)))
+	} else {
+		renderedBadge = dimStyle.Render("●")
+	}
+
+	// Check for matched tags
+	var matchedTagBadges string
+	if len(l.Tags) > 0 && isFiltered {
+		tagOffset := urlOffset + len(urlRunes) + 1
+		var matchedTags []string
+		for _, tag := range l.Tags {
+			tRunes := []rune(tag)
+			tEnd := tagOffset + len(tRunes)
+			hasMatch := false
+			for _, idx := range matchedRunes {
+				if idx >= tagOffset && idx < tEnd {
+					hasMatch = true
+					break
+				}
+			}
+			if hasMatch {
+				matchedTags = append(matchedTags, "#"+tag)
+			}
+			tagOffset = tEnd + 1
+		}
+		if len(matchedTags) > 0 {
+			matchedTagBadges = "  " + dimStyle.Render(strings.Join(matchedTags, " "))
+		}
+	}
+
+	row := fmt.Sprintf("%s  %s  %s%s", renderedTitle, renderedURL, renderedBadge, matchedTagBadges)
+	if m.Width() > 0 {
+		row = ansi.Truncate(row, m.Width(), "…")
+	}
+	if d.zone != nil {
+		fmt.Fprint(w, d.zone.Mark(li.ID, row))
+	} else {
+		fmt.Fprint(w, row)
 	}
 }
 
@@ -160,12 +280,7 @@ type Model struct {
 func New(s *store.Store) Model {
 	items := linksToItems(s.All())
 	zm := zone.New()
-	delegate := zoneDelegate{
-		DefaultDelegate: list.NewDefaultDelegate(),
-		zone:            zm,
-	}
-	delegate.ShowDescription = false
-	delegate.SetSpacing(0)
+	delegate := newLinkDelegate(zm)
 
 	l := list.New(items, delegate, 0, 0)
 	l.Title = "🔥 hotclip [recent]"
@@ -220,8 +335,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.MouseClickMsg); ok {
-		if msg.Button == tea.MouseLeft {
-			for i, item := range m.list.Items() {
+		if msg.Button == tea.MouseLeft && !m.list.SettingFilter() {
+			for i, item := range m.list.VisibleItems() {
 				if li, ok := item.(linkItem); ok {
 					if m.zone.Get(li.ID).InBounds(msg) {
 						m.list.Select(i)
@@ -412,15 +527,20 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	if m.editingID != "" {
 		_ = m.store.Update(m.editingID, title, url)
 		msg = fmt.Sprintf("Updated: %s", title)
+		m.view = viewList
+		m.editingID = ""
+		m.refreshList()
+		m.selectByID(m.editingID)
 	} else {
 		link := model.NewLink(title, url, nil)
 		_ = m.store.Add(link)
 		msg = fmt.Sprintf("Added: %s", title)
+		m.view = viewList
+		m.editingID = ""
+		m.list.ResetFilter()
+		m.refreshList()
+		m.selectByID(link.ID)
 	}
-
-	m.view = viewList
-	m.editingID = ""
-	m.refreshList()
 	status := m.list.NewStatusMessage(msg)
 	return m, status
 }
@@ -428,13 +548,18 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 func (m *Model) refreshList() {
 	links := m.store.AllUnsorted()
 	model.SortLinks(links, m.sortMode)
-	m.list.SetItems(linksToItems(links))
+	cmd := m.list.SetItems(linksToItems(links))
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			m.list, _ = m.list.Update(msg)
+		}
+	}
 	m.list.Title = fmt.Sprintf("🔥 hotclip [%s]", m.sortMode.Label())
 }
 
 // selectByID moves the cursor to the item with the given ID.
 func (m *Model) selectByID(id string) {
-	for i, item := range m.list.Items() {
+	for i, item := range m.list.VisibleItems() {
 		if li, ok := item.(linkItem); ok && li.ID == id {
 			m.list.Select(i)
 			return
